@@ -6,12 +6,53 @@ Fetches product prices from Samsung Malaysia API and updates Google Sheets.
 
 import json
 import os
+import ssl
+import certifi
 from datetime import datetime
 from typing import List, Dict, Optional
 
 import requests
 import gspread
 from google.oauth2.service_account import Credentials
+
+# Load environment variables from .env file if running locally
+try:
+    from dotenv import load_dotenv
+    # Only load .env if not running in GitHub Actions
+    if not os.environ.get('GITHUB_ACTIONS'):
+        load_dotenv()
+        print("Loaded environment variables from .env file (local environment)")
+        
+        # Configure SSL for local environment to handle corporate firewalls/proxies
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Monkey patch requests to disable SSL verification globally for local environment
+        import requests.adapters
+        import requests.sessions
+        
+        # Save original methods
+        _original_send = requests.adapters.HTTPAdapter.send
+        _original_request = requests.sessions.Session.request
+        
+        def _patched_send(self, request, **kwargs):
+            kwargs['verify'] = False
+            return _original_send(self, request, **kwargs)
+        
+        def _patched_request(self, method, url, **kwargs):
+            kwargs['verify'] = False
+            return _original_request(self, method, url, **kwargs)
+        
+        # Apply patches
+        requests.adapters.HTTPAdapter.send = _patched_send
+        requests.sessions.Session.request = _patched_request
+        
+        print("Configured SSL settings for local environment (globally disabled SSL verification)")
+    else:
+        print("Running in GitHub Actions - using default SSL settings")
+except ImportError:
+    print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
+    print("Environment variables will only be available from system environment.")
 
 
 class SamsungPriceFetcher:
@@ -188,25 +229,51 @@ class GoogleSheetsUpdater:
             'https://www.googleapis.com/auth/drive'
         ]
         
-        # Try to get credentials from environment variable or file
+        # Check if running in GitHub Actions
+        is_github_actions = bool(os.environ.get('GITHUB_ACTIONS'))
+        
+        # Try to get credentials from environment variable first
         creds_json = os.environ.get('GOOGLE_CREDENTIALS')
         
         if creds_json:
-            # Credentials from environment variable (for GitHub Actions)
-            import json
-            creds_dict = json.loads(creds_json)
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            # Credentials from environment variable (GitHub Actions or local .env)
+            try:
+                import json
+                creds_dict = json.loads(creds_json)
+                creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+                env_source = "GitHub Actions environment" if is_github_actions else "local .env file"
+                print(f"Using Google credentials from {env_source}")
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in GOOGLE_CREDENTIALS environment variable: {e}")
         else:
-            # Credentials from file (for local testing)
+            # Fallback to service account file (local only)
             creds_file = 'service_account.json'
-            if not os.path.exists(creds_file):
-                raise FileNotFoundError(
-                    f"Google credentials not found. Please provide {creds_file} "
-                    "or set GOOGLE_CREDENTIALS environment variable."
-                )
-            creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+            if os.path.exists(creds_file):
+                creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
+                print(f"Using Google credentials from {creds_file}")
+            else:
+                # Provide helpful error message based on environment
+                if is_github_actions:
+                    raise FileNotFoundError(
+                        "Google credentials not found in GitHub Actions environment. "
+                        "Please set the GOOGLE_CREDENTIALS secret in your repository settings."
+                    )
+                else:
+                    raise FileNotFoundError(
+                        "Google credentials not found. Please either:\n"
+                        "  1. Add GOOGLE_CREDENTIALS to your .env file, or\n"
+                        "  2. Place service_account.json in the project directory\n"
+                        f"Current working directory: {os.getcwd()}"
+                    )
         
+        # Create gspread client
         self.client = gspread.authorize(creds)
+        
+        # Log which environment we're using
+        if is_github_actions:
+            print("Using default gspread client for GitHub Actions")
+        else:
+            print("Using gspread client with SSL verification disabled for local environment")
     
     def update_sheet(self, products: List[Dict[str, str]]):
         """Update Google Sheet with product data."""
@@ -281,8 +348,13 @@ class GoogleSheetsUpdater:
 
 def main():
     """Main function to run the price capture process."""
+    # Detect environment
+    is_github_actions = bool(os.environ.get('GITHUB_ACTIONS'))
+    environment = "GitHub Actions" if is_github_actions else "Local"
+    
     print("=" * 50)
     print("Samsung Price Capture - Starting")
+    print(f"Environment: {environment}")
     print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
     
