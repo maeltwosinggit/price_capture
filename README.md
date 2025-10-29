@@ -1,13 +1,14 @@
 # Samsung Price Capture Automation
 
-Automated daily price capture from Samsung Malaysia multistore website (https://www.samsung.com/my/multistore/eppsme/) with Google Sheets integration.
+Automated daily price capture from Samsung Malaysia API with Google Sheets integration.
 
 ## Features
 
-- 🤖 **Automated scraping** of Samsung product prices
+- 🤖 **Automated price fetching** via Samsung API
 - 📊 **Google Sheets integration** for data storage
 - ⏰ **Daily automation** via GitHub Actions
 - 🔄 **Manual trigger** support for on-demand runs
+- 💰 **Tracks promotion prices** for multiple Samsung products
 
 ## Prerequisites
 
@@ -155,28 +156,38 @@ Edit `config.json` to customize:
 
 ```json
 {
-  "target_url": "https://www.samsung.com/my/multistore/eppsme/",
+  "api_endpoint": "https://shop.samsung.com/my/multistore/my_epp/eppsme/servicesv2/getSimpleProductsInfo",
+  "product_codes": [
+    "F-AR1-0BYFAMWK",
+    "F-AR4-0F09D0AM",
+    "F-AR1-8BYFAMWK",
+    "F-AR2-4BYFAMWK",
+    "F-AR1-0BYEAAWK",
+    "F-AR1-3BYEAAWK",
+    "F-AR-18BYEAAWK",
+    "F-AR2-4BYEAAWK",
+    "F-AR1-0AYHZBWK",
+    "F-AR1-3AYHZBWK",
+    "RT62K7005BS/ME"
+  ],
   "google_sheet_id": "YOUR_GOOGLE_SHEET_ID_HERE",
-  "worksheet_name": "Prices",
-  "scrape_delay": 2,
-  "max_products": 50
+  "worksheet_name": "Prices"
 }
 ```
 
-- **target_url**: Samsung website URL to scrape
+- **api_endpoint**: Samsung API endpoint for product information
+- **product_codes**: List of Samsung product codes to track
 - **google_sheet_id**: Your Google Sheet ID (can also be set via environment variable)
 - **worksheet_name**: Name of the worksheet tab (will be created if doesn't exist)
-- **scrape_delay**: Delay in seconds before scraping (allows page to load)
-- **max_products**: Maximum number of products to capture per run
 
 ## Output Format
 
 The Google Sheet will be populated with the following columns:
 
-| Timestamp | Product Name | Price | URL |
-|-----------|--------------|-------|-----|
-| 2025-10-29 08:00:00 | Samsung Galaxy S24 | RM 3,999 | https://... |
-| 2025-10-29 08:00:00 | Samsung QLED TV | RM 5,999 | https://... |
+| Timestamp | Product Code | Price | Price Formatted | Stock Status |
+|-----------|--------------|-------|-----------------|--------------|
+| 2025-10-29 08:00:00 | F-AR4-0F09D0AM | 989.45 | RM 989.45 | In Stock |
+| 2025-10-29 08:00:00 | RT62K7005BS/ME | 2599.00 | RM 2,599.00 | In Stock |
 
 ## Troubleshooting
 
@@ -188,10 +199,11 @@ The Google Sheet will be populated with the following columns:
 - Make sure you shared the Google Sheet with the service account email
 - Check that the service account has Editor permissions
 
-### No products scraped
-- The website structure may have changed
+### No products fetched
+- Check if the API endpoint is accessible
+- Verify product codes are correct in `config.json`
 - Check the GitHub Actions logs for detailed error messages
-- The script will still create an entry indicating manual review is needed
+- The script will create entries with error information for failed products
 
 ### Workflow not running
 - Check that GitHub Actions is enabled for your repository

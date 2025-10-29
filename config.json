@@ -1,7 +1,18 @@
 {
-  "target_url": "https://www.samsung.com/my/multistore/eppsme/",
+  "api_endpoint": "https://shop.samsung.com/my/multistore/my_epp/eppsme/servicesv2/getSimpleProductsInfo",
+  "product_codes": [
+    "F-AR1-0BYFAMWK",
+    "F-AR4-0F09D0AM",
+    "F-AR1-8BYFAMWK",
+    "F-AR2-4BYFAMWK",
+    "F-AR1-0BYEAAWK",
+    "F-AR1-3BYEAAWK",
+    "F-AR-18BYEAAWK",
+    "F-AR2-4BYEAAWK",
+    "F-AR1-0AYHZBWK",
+    "F-AR1-3AYHZBWK",
+    "RT62K7005BS/ME"
+  ],
   "google_sheet_id": "YOUR_GOOGLE_SHEET_ID_HERE",
-  "worksheet_name": "Prices",
-  "scrape_delay": 2,
-  "max_products": 50
+  "worksheet_name": "Prices"
 }

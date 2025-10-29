@@ -1,35 +1,25 @@
 #!/usr/bin/env python3
 """
 Samsung Price Capture Script
-Scrapes product prices from Samsung Malaysia multistore and updates Google Sheets.
+Fetches product prices from Samsung Malaysia API and updates Google Sheets.
 """
 
 import json
 import os
-import time
 from datetime import datetime
 from typing import List, Dict, Optional
 
 import requests
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 import gspread
 from google.oauth2.service_account import Credentials
 
 
-class SamsungPriceScraper:
-    """Scraper for Samsung product prices."""
+class SamsungPriceFetcher:
+    """Fetcher for Samsung product prices via API."""
     
     def __init__(self, config_path: str = "config.json"):
-        """Initialize the scraper with configuration."""
+        """Initialize the fetcher with configuration."""
         self.config = self._load_config(config_path)
-        self.driver = None
         
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from JSON file."""
@@ -39,130 +29,94 @@ class SamsungPriceScraper:
         except FileNotFoundError:
             print(f"Warning: {config_path} not found, using defaults")
             return {
-                "target_url": "https://www.samsung.com/my/multistore/eppsme/",
+                "api_endpoint": "https://shop.samsung.com/my/multistore/my_epp/eppsme/servicesv2/getSimpleProductsInfo",
+                "product_codes": [],
                 "google_sheet_id": os.environ.get("GOOGLE_SHEET_ID", ""),
-                "worksheet_name": "Prices",
-                "scrape_delay": 2,
-                "max_products": 50
+                "worksheet_name": "Prices"
             }
     
-    def _setup_driver(self):
-        """Set up Selenium WebDriver with Chrome."""
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-    def scrape_prices(self) -> List[Dict[str, str]]:
+    def fetch_prices(self) -> List[Dict[str, str]]:
         """
-        Scrape product prices from Samsung website.
+        Fetch product prices from Samsung API.
         Returns list of dictionaries with product information.
         """
         products = []
+        api_endpoint = self.config.get("api_endpoint")
+        product_codes = self.config.get("product_codes", [])
         
-        try:
-            self._setup_driver()
-            url = self.config.get("target_url")
-            print(f"Navigating to {url}")
-            
-            self.driver.get(url)
-            
-            # Wait for page to load
-            time.sleep(self.config.get("scrape_delay", 2))
-            
-            # Try to wait for product elements to load
+        if not product_codes:
+            print("Warning: No product codes configured")
+            return products
+        
+        print(f"Fetching prices for {len(product_codes)} products...")
+        
+        for product_code in product_codes:
             try:
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div, article, li"))
-                )
-            except:
-                print("Warning: Timeout waiting for elements, continuing anyway...")
-            
-            # Get page source and parse with BeautifulSoup
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
-            
-            # Samsung websites typically use various selectors for products
-            # Try multiple common patterns
-            product_selectors = [
-                {'container': 'div.product-card', 'title': '.product-title, .product-name', 'price': '.price, .product-price'},
-                {'container': 'article.product', 'title': 'h3, h4, .title', 'price': '.price, .amount'},
-                {'container': 'li.product-item', 'title': '.product-name, .name', 'price': '.price'},
-                {'container': 'div[class*="product"]', 'title': '[class*="title"], [class*="name"]', 'price': '[class*="price"]'},
-            ]
-            
-            found_products = False
-            
-            for selector_set in product_selectors:
-                product_elements = soup.select(selector_set['container'])
+                # Build API URL with product code
+                url = f"{api_endpoint}?productCodes={product_code}"
+                print(f"Fetching: {product_code}")
                 
-                if product_elements:
-                    print(f"Found {len(product_elements)} products using selector: {selector_set['container']}")
-                    found_products = True
-                    
-                    for element in product_elements[:self.config.get("max_products", 50)]:
-                        try:
-                            # Extract title
-                            title_elem = element.select_one(selector_set['title'])
-                            title = title_elem.get_text(strip=True) if title_elem else "N/A"
-                            
-                            # Extract price
-                            price_elem = element.select_one(selector_set['price'])
-                            price = price_elem.get_text(strip=True) if price_elem else "N/A"
-                            
-                            # Extract product URL if available
-                            link_elem = element.find('a', href=True)
-                            url = link_elem['href'] if link_elem else "N/A"
-                            if url != "N/A" and not url.startswith('http'):
-                                url = f"https://www.samsung.com{url}"
-                            
-                            if title != "N/A" or price != "N/A":
-                                products.append({
-                                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                    'product_name': title,
-                                    'price': price,
-                                    'url': url
-                                })
-                        except Exception as e:
-                            print(f"Error extracting product data: {e}")
-                            continue
-                    
-                    break  # Stop after finding products with first matching selector
-            
-            if not found_products:
-                print("No products found with standard selectors, trying generic approach...")
-                # Fallback: Look for any elements with price-like text
-                all_text = soup.get_text()
-                print(f"Page text length: {len(all_text)} characters")
+                # Make API request
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
                 
-                # Create a sample entry to indicate scraping occurred
+                # Parse JSON response
+                data = response.json()
+                
+                # Extract product data
+                if data.get("resultCode") == "0000" and data.get("productDatas"):
+                    product_data = data["productDatas"][0]
+                    
+                    # Extract promotion price (or regular price if no promotion)
+                    promotion_price = product_data.get("promotionPrice")
+                    regular_price = product_data.get("price")
+                    price = promotion_price if promotion_price else regular_price
+                    
+                    # Get formatted price
+                    price_formatted = product_data.get("promotionPriceFormatted") or product_data.get("priceFormatted", "N/A")
+                    
+                    # Get stock status
+                    stock_status = product_data.get("stockLevelStatusDisplay", "Unknown")
+                    
+                    products.append({
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'product_code': product_code,
+                        'price': price,
+                        'price_formatted': price_formatted,
+                        'stock_status': stock_status
+                    })
+                    
+                    print(f"  ✓ {product_code}: {price_formatted} ({stock_status})")
+                else:
+                    print(f"  ✗ {product_code}: No data or error in response")
+                    products.append({
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'product_code': product_code,
+                        'price': 'N/A',
+                        'price_formatted': 'N/A',
+                        'stock_status': 'Error: No data'
+                    })
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"  ✗ {product_code}: Request error - {e}")
                 products.append({
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'product_name': 'Sample - Manual Review Required',
+                    'product_code': product_code,
                     'price': 'N/A',
-                    'url': url
+                    'price_formatted': 'N/A',
+                    'stock_status': f'Error: {str(e)}'
                 })
-            
-            print(f"Successfully scraped {len(products)} products")
-            
-        except Exception as e:
-            print(f"Error during scraping: {e}")
-            # Add error entry
-            products.append({
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'product_name': f'Error: {str(e)}',
-                'price': 'N/A',
-                'url': self.config.get("target_url", "N/A")
-            })
-        finally:
-            if self.driver:
-                self.driver.quit()
+            except (KeyError, IndexError, json.JSONDecodeError) as e:
+                print(f"  ✗ {product_code}: Parse error - {e}")
+                products.append({
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'product_code': product_code,
+                    'price': 'N/A',
+                    'price_formatted': 'N/A',
+                    'stock_status': f'Error: Parse error'
+                })
         
+        print(f"\nSuccessfully fetched {len(products)} products")
         return products
 
 
@@ -228,16 +182,17 @@ class GoogleSheetsUpdater:
             
             if not existing_data or not existing_data[0]:
                 # Add headers
-                headers = ['Timestamp', 'Product Name', 'Price', 'URL']
+                headers = ['Timestamp', 'Product Code', 'Price', 'Price Formatted', 'Stock Status']
                 worksheet.append_row(headers)
             
             # Append product data
             for product in products:
                 row = [
                     product.get('timestamp', ''),
-                    product.get('product_name', ''),
-                    product.get('price', ''),
-                    product.get('url', '')
+                    product.get('product_code', ''),
+                    str(product.get('price', '')),
+                    product.get('price_formatted', ''),
+                    product.get('stock_status', '')
                 ]
                 worksheet.append_row(row)
             
@@ -259,16 +214,16 @@ def main():
         # Load configuration
         config_path = os.environ.get('CONFIG_PATH', 'config.json')
         
-        # Initialize scraper and scrape prices
-        scraper = SamsungPriceScraper(config_path)
-        products = scraper.scrape_prices()
+        # Initialize fetcher and fetch prices
+        fetcher = SamsungPriceFetcher(config_path)
+        products = fetcher.fetch_prices()
         
         if not products:
-            print("Warning: No products scraped")
+            print("Warning: No products fetched")
             return
         
         # Update Google Sheets
-        updater = GoogleSheetsUpdater(scraper.config)
+        updater = GoogleSheetsUpdater(fetcher.config)
         updater.update_sheet(products)
         
         print("=" * 50)
