@@ -36,6 +36,34 @@ class TestConfigLoading(unittest.TestCase):
         finally:
             os.unlink(temp_config)
     
+    def test_placeholder_with_env_var_set(self):
+        """Test that placeholder is replaced with env var without warning."""
+        # Create a temporary config file with placeholder
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            config_data = {
+                "api_endpoint": "https://test.api.com",
+                "product_codes": ["TEST123"],
+                "google_sheet_id": "YOUR_GOOGLE_SHEET_ID_HERE",
+                "worksheet_name": "Prices"
+            }
+            json.dump(config_data, f)
+            temp_config = f.name
+        
+        try:
+            # Set environment variable
+            os.environ['GOOGLE_SHEET_ID'] = 'real_sheet_id_123'
+            
+            # Load config - should use env var without warning
+            fetcher = SamsungPriceFetcher(temp_config)
+            
+            # Sheet ID should be from env var
+            self.assertEqual(fetcher.config.get('google_sheet_id'), 'real_sheet_id_123')
+        finally:
+            # Clean up
+            if 'GOOGLE_SHEET_ID' in os.environ:
+                del os.environ['GOOGLE_SHEET_ID']
+            os.unlink(temp_config)
+    
     def test_valid_config_loading(self):
         """Test that valid configs are loaded correctly."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -98,6 +126,50 @@ class TestGoogleSheetsValidation(unittest.TestCase):
 
 class TestAPIResponseHandling(unittest.TestCase):
     """Test improved API response handling."""
+    
+    @patch('price_capture.requests.get')
+    def test_browser_headers_sent(self, mock_get):
+        """Test that browser-like headers are sent with API requests."""
+        mock_response = Mock()
+        mock_response.headers = {'content-type': 'application/json'}
+        mock_response.raise_for_status = Mock()
+        mock_response.json.return_value = {
+            "resultCode": "0000",
+            "productDatas": [{
+                "promotionPrice": 999.99,
+                "promotionPriceFormatted": "RM 999.99",
+                "stockLevelStatusDisplay": "In Stock"
+            }]
+        }
+        mock_get.return_value = mock_response
+        
+        # Create a temporary config file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            config_data = {
+                "api_endpoint": "https://test.api.com",
+                "product_codes": ["TEST123"],
+                "google_sheet_id": "",
+                "worksheet_name": "Prices"
+            }
+            json.dump(config_data, f)
+            temp_config = f.name
+        
+        try:
+            fetcher = SamsungPriceFetcher(temp_config)
+            products = fetcher.fetch_prices()
+            
+            # Verify headers were passed
+            call_args = mock_get.call_args
+            self.assertIn('headers', call_args.kwargs)
+            headers = call_args.kwargs['headers']
+            
+            # Check for key headers
+            self.assertIn('User-Agent', headers)
+            self.assertIn('Mozilla', headers['User-Agent'])
+            self.assertIn('Accept', headers)
+            self.assertEqual(headers['Accept'], 'application/json, text/plain, */*')
+        finally:
+            os.unlink(temp_config)
     
     @patch('price_capture.requests.get')
     def test_non_json_response_handling(self, mock_get):

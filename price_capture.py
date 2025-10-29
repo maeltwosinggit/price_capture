@@ -17,6 +17,10 @@ from google.oauth2.service_account import Credentials
 class SamsungPriceFetcher:
     """Fetcher for Samsung product prices via API."""
     
+    # Constants for API requests
+    RESPONSE_PREVIEW_LENGTH = 200
+    USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    
     def __init__(self, config_path: str = "config.json"):
         """Initialize the fetcher with configuration."""
         self.config = self._load_config(config_path)
@@ -29,11 +33,15 @@ class SamsungPriceFetcher:
                 
                 # Check for placeholder values
                 sheet_id = config.get('google_sheet_id', '')
+                env_sheet_id = os.environ.get("GOOGLE_SHEET_ID", "")
+                
                 if sheet_id and sheet_id.upper().startswith('YOUR_'):
-                    print(f"Warning: Google Sheet ID appears to be a placeholder: {sheet_id}")
-                    print("Please configure a valid Google Sheet ID in config.json or set GOOGLE_SHEET_ID environment variable")
-                    # Don't use placeholder value
-                    config['google_sheet_id'] = os.environ.get("GOOGLE_SHEET_ID", "")
+                    # Only warn if environment variable is also not set
+                    if not env_sheet_id:
+                        print(f"Warning: Google Sheet ID appears to be a placeholder: {sheet_id}")
+                        print("Please configure a valid Google Sheet ID in config.json or set GOOGLE_SHEET_ID environment variable")
+                    # Use environment variable instead of placeholder
+                    config['google_sheet_id'] = env_sheet_id
                 
                 return config
         except FileNotFoundError:
@@ -60,20 +68,42 @@ class SamsungPriceFetcher:
         
         print(f"Fetching prices for {len(product_codes)} products...")
         
+        # Set up headers to mimic a real browser
+        headers = {
+            'User-Agent': self.USER_AGENT,
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://shop.samsung.com/my/',
+            'Origin': 'https://shop.samsung.com',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+        }
+        
         for product_code in product_codes:
             try:
                 # Build API URL with product code
                 url = f"{api_endpoint}?productCodes={product_code}"
                 print(f"Fetching: {product_code}")
                 
-                # Make API request
-                response = requests.get(url, timeout=10)
+                # Make API request with browser-like headers
+                response = requests.get(url, headers=headers, timeout=10)
                 response.raise_for_status()
                 
                 # Check if response is JSON
                 content_type = response.headers.get('content-type', '')
                 if 'application/json' not in content_type.lower():
+                    # Show a snippet of the response for debugging
+                    try:
+                        response_snippet = (response.text[:self.RESPONSE_PREVIEW_LENGTH] 
+                                          if len(response.text) > self.RESPONSE_PREVIEW_LENGTH 
+                                          else response.text)
+                    except (TypeError, AttributeError):
+                        response_snippet = "[Unable to read response]"
                     print(f"  ✗ {product_code}: API returned non-JSON response (Content-Type: {content_type})")
+                    print(f"     Response preview: {response_snippet}")
                     products.append({
                         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         'product_code': product_code,
