@@ -108,22 +108,27 @@ class TestAPIResponseHandling(unittest.TestCase):
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
         
-        config = {
-            "api_endpoint": "https://test.api.com",
-            "product_codes": ["TEST123"],
-            "google_sheet_id": "",
-            "worksheet_name": "Prices"
-        }
+        # Create a temporary config file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            config_data = {
+                "api_endpoint": "https://test.api.com",
+                "product_codes": ["TEST123"],
+                "google_sheet_id": "",
+                "worksheet_name": "Prices"
+            }
+            json.dump(config_data, f)
+            temp_config = f.name
         
-        fetcher = SamsungPriceFetcher.__new__(SamsungPriceFetcher)
-        fetcher.config = config
-        
-        products = fetcher.fetch_prices()
-        
-        # Should have one product with error status
-        self.assertEqual(len(products), 1)
-        self.assertEqual(products[0]['product_code'], 'TEST123')
-        self.assertIn('Non-JSON', products[0]['stock_status'])
+        try:
+            fetcher = SamsungPriceFetcher(temp_config)
+            products = fetcher.fetch_prices()
+            
+            # Should have one product with error status
+            self.assertEqual(len(products), 1)
+            self.assertEqual(products[0]['product_code'], 'TEST123')
+            self.assertIn('Non-JSON', products[0]['stock_status'])
+        finally:
+            os.unlink(temp_config)
     
     @patch('price_capture.requests.get')
     def test_json_response_with_valid_data(self, mock_get):
@@ -141,23 +146,28 @@ class TestAPIResponseHandling(unittest.TestCase):
         }
         mock_get.return_value = mock_response
         
-        config = {
-            "api_endpoint": "https://test.api.com",
-            "product_codes": ["TEST123"],
-            "google_sheet_id": "",
-            "worksheet_name": "Prices"
-        }
+        # Create a temporary config file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            config_data = {
+                "api_endpoint": "https://test.api.com",
+                "product_codes": ["TEST123"],
+                "google_sheet_id": "",
+                "worksheet_name": "Prices"
+            }
+            json.dump(config_data, f)
+            temp_config = f.name
         
-        fetcher = SamsungPriceFetcher.__new__(SamsungPriceFetcher)
-        fetcher.config = config
-        
-        products = fetcher.fetch_prices()
-        
-        # Should have one product with valid data
-        self.assertEqual(len(products), 1)
-        self.assertEqual(products[0]['product_code'], 'TEST123')
-        self.assertEqual(products[0]['price'], 999.99)
-        self.assertEqual(products[0]['price_formatted'], 'RM 999.99')
+        try:
+            fetcher = SamsungPriceFetcher(temp_config)
+            products = fetcher.fetch_prices()
+            
+            # Should have one product with valid data
+            self.assertEqual(len(products), 1)
+            self.assertEqual(products[0]['product_code'], 'TEST123')
+            self.assertEqual(products[0]['price'], 999.99)
+            self.assertEqual(products[0]['price_formatted'], 'RM 999.99')
+        finally:
+            os.unlink(temp_config)
 
 
 if __name__ == '__main__':
