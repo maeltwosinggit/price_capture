@@ -17,6 +17,10 @@ from google.oauth2.service_account import Credentials
 class SamsungPriceFetcher:
     """Fetcher for Samsung product prices via API."""
     
+    # Constants for API requests
+    RESPONSE_PREVIEW_LENGTH = 200
+    USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    
     def __init__(self, config_path: str = "config.json"):
         """Initialize the fetcher with configuration."""
         self.config = self._load_config(config_path)
@@ -66,7 +70,7 @@ class SamsungPriceFetcher:
         
         # Set up headers to mimic a real browser
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': self.USER_AGENT,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -93,7 +97,9 @@ class SamsungPriceFetcher:
                 if 'application/json' not in content_type.lower():
                     # Show a snippet of the response for debugging
                     try:
-                        response_snippet = response.text[:200] if len(response.text) > 200 else response.text
+                        response_snippet = (response.text[:self.RESPONSE_PREVIEW_LENGTH] 
+                                          if len(response.text) > self.RESPONSE_PREVIEW_LENGTH 
+                                          else response.text)
                     except (TypeError, AttributeError):
                         response_snippet = "[Unable to read response]"
                     print(f"  ✗ {product_code}: API returned non-JSON response (Content-Type: {content_type})")
