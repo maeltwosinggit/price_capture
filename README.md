@@ -191,6 +191,18 @@ The Google Sheet will be populated with the following columns:
 
 ## Troubleshooting
 
+### "Google Sheet ID appears to be a placeholder" warning
+- The script detected that your `config.json` has a placeholder value like `YOUR_GOOGLE_SHEET_ID_HERE`
+- **Solution**: Replace this with your actual Google Sheet ID in `config.json` or set the `GOOGLE_SHEET_ID` environment variable/secret
+- See "Step 4: Create and Share Google Sheet" above for how to get your Sheet ID
+
+### "Google Sheet not found (404)" error
+- The Google Sheet ID is incorrect, deleted, or not shared with the service account
+- **Check**:
+  1. Verify the Sheet ID is correct (from the URL: `https://docs.google.com/spreadsheets/d/SHEET_ID_HERE/edit`)
+  2. Ensure the sheet is shared with your service account email (found in `GOOGLE_CREDENTIALS` as `client_email`)
+  3. Make sure the service account has **Editor** permissions on the sheet
+
 ### "Google credentials not found" error
 - Ensure `GOOGLE_CREDENTIALS` secret is set correctly in GitHub
 - For local testing, ensure `service_account.json` exists or environment variable is set
@@ -198,6 +210,14 @@ The Google Sheet will be populated with the following columns:
 ### "Permission denied" on Google Sheet
 - Make sure you shared the Google Sheet with the service account email
 - Check that the service account has Editor permissions
+
+### "API returned non-JSON response" errors
+- The Samsung API returned HTML or other non-JSON content instead of product data
+- This usually indicates:
+  1. The API endpoint URL has changed
+  2. The product code is invalid or no longer exists
+  3. There's a temporary API issue
+- **Check**: Verify the product codes are still valid on Samsung's website
 
 ### No products fetched
 - Check if the API endpoint is accessible

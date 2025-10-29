@@ -25,7 +25,17 @@ class SamsungPriceFetcher:
         """Load configuration from JSON file."""
         try:
             with open(config_path, 'r') as f:
-                return json.load(f)
+                config = json.load(f)
+                
+                # Check for placeholder values
+                sheet_id = config.get('google_sheet_id', '')
+                if sheet_id and sheet_id.upper().startswith('YOUR_'):
+                    print(f"Warning: Google Sheet ID appears to be a placeholder: {sheet_id}")
+                    print("Please configure a valid Google Sheet ID in config.json or set GOOGLE_SHEET_ID environment variable")
+                    # Don't use placeholder value
+                    config['google_sheet_id'] = os.environ.get("GOOGLE_SHEET_ID", "")
+                
+                return config
         except FileNotFoundError:
             print(f"Warning: {config_path} not found, using defaults")
             return {
@@ -59,6 +69,19 @@ class SamsungPriceFetcher:
                 # Make API request
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
+                
+                # Check if response is JSON
+                content_type = response.headers.get('content-type', '')
+                if 'application/json' not in content_type.lower():
+                    print(f"  ✗ {product_code}: API returned non-JSON response (Content-Type: {content_type})")
+                    products.append({
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'product_code': product_code,
+                        'price': 'N/A',
+                        'price_formatted': 'N/A',
+                        'stock_status': 'Error: Non-JSON response'
+                    })
+                    continue
                 
                 # Parse JSON response
                 data = response.json()
@@ -165,8 +188,20 @@ class GoogleSheetsUpdater:
             self._authenticate()
             
             sheet_id = self.config.get('google_sheet_id') or os.environ.get('GOOGLE_SHEET_ID')
+            
+            # Validate sheet ID
             if not sheet_id:
-                raise ValueError("Google Sheet ID not provided in config or environment")
+                raise ValueError(
+                    "Google Sheet ID not provided. Please set it in config.json or "
+                    "as GOOGLE_SHEET_ID environment variable."
+                )
+            
+            if sheet_id.upper().startswith('YOUR_'):
+                raise ValueError(
+                    f"Google Sheet ID appears to be a placeholder: '{sheet_id}'. "
+                    "Please configure a valid Google Sheet ID in config.json or "
+                    "set GOOGLE_SHEET_ID environment variable."
+                )
             
             sheet = self.client.open_by_key(sheet_id)
             worksheet_name = self.config.get('worksheet_name', 'Prices')
@@ -198,6 +233,17 @@ class GoogleSheetsUpdater:
             
             print(f"Successfully updated Google Sheet with {len(products)} products")
             
+        except gspread.exceptions.SpreadsheetNotFound as e:
+            print(f"Error: Google Sheet not found (404)")
+            print(f"Sheet ID: {sheet_id}")
+            print("Possible causes:")
+            print("  1. The Google Sheet ID is incorrect")
+            print("  2. The sheet has not been shared with the service account")
+            print("  3. The sheet was deleted")
+            print("\nPlease verify:")
+            print("  - The GOOGLE_SHEET_ID is correct")
+            print("  - The Google Sheet is shared with your service account email")
+            raise
         except Exception as e:
             print(f"Error updating Google Sheet: {e}")
             raise
