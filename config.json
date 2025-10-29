@@ -1,0 +1,7 @@
+{
+  "target_url": "https://www.samsung.com/my/multistore/eppsme/",
+  "google_sheet_id": "YOUR_GOOGLE_SHEET_ID_HERE",
+  "worksheet_name": "Prices",
+  "scrape_delay": 2,
+  "max_products": 50
+}
